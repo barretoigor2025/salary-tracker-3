@@ -2,7 +2,7 @@ import { useState } from "react";
 import { BottomSheet } from "./ui.jsx";
 import { exportBackup, parseBackup } from "../utils/backup.js";
 
-export function BackupModal({ entries, settings, gastos, carro, auditHistory, onRestore, onClose }) {
+export function BackupModal({ entries, settings, gastos, carro, auditHistory, extras, onRestore, onClose }) {
   const [tab, setTab] = useState("export");
   const [dragOver, setDragOver] = useState(false);
   const [preview, setPreview] = useState(null);
@@ -13,6 +13,8 @@ export function BackupModal({ entries, settings, gastos, carro, auditHistory, on
   const lastBackupKey = "jst3_last_backup";
   const lastBackup = localStorage.getItem(lastBackupKey);
   const daysSince = lastBackup ? Math.floor((Date.now() - new Date(lastBackup)) / 86400000) : null;
+  const cardCount = extras?.cartao?.lancamentos?.length || 0;
+  const taxCount = extras?.taxPayments?.reduce((s, p) => s + (p.parcelas?.length || 0), 0) || 0;
 
   function handleFile(file) {
     if (!file) return;
@@ -25,7 +27,7 @@ export function BackupModal({ entries, settings, gastos, carro, auditHistory, on
   }
 
   function doExport() {
-    const json = exportBackup(entries, settings, gastos, carro, auditHistory);
+    const json = exportBackup(entries, settings, gastos, carro, auditHistory, extras);
     localStorage.setItem(lastBackupKey, new Date().toISOString());
     setBackupJson(json);
   }
@@ -37,7 +39,6 @@ export function BackupModal({ entries, settings, gastos, carro, auditHistory, on
 
   return (
     <BottomSheet onClose={onClose} title="💾 Backup & Restauração">
-      {/* Tabs */}
       <div className="flex border-b" style={{ borderColor: "var(--border)" }}>
         {[{ id: "export", label: "⬇ Exportar" }, { id: "import", label: "⬆ Importar" }].map(t => (
           <button
@@ -57,8 +58,16 @@ export function BackupModal({ entries, settings, gastos, carro, auditHistory, on
           <>
             <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bg-elevated)" }}>
               <div className="flex justify-between text-sm">
-                <span style={{ color: "var(--text-sub)" }}>Lançamentos</span>
+                <span style={{ color: "var(--text-sub)" }}>Lançamentos de turno</span>
                 <span className="font-mono font-bold" style={{ color: "var(--text)" }}>{entries.length}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span style={{ color: "var(--text-sub)" }}>Cartão</span>
+                <span className="font-mono font-bold" style={{ color: "var(--cc)" }}>{cardCount}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span style={{ color: "var(--text-sub)" }}>Impostos/parcelas</span>
+                <span className="font-mono font-bold" style={{ color: "var(--warning)" }}>{taxCount}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span style={{ color: "var(--text-sub)" }}>Último backup</span>
@@ -75,18 +84,18 @@ export function BackupModal({ entries, settings, gastos, carro, auditHistory, on
             )}
 
             <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: "var(--bg-elevated)", color: "var(--text-muted)" }}>
-              <div>• Gera um arquivo <code style={{ color: "var(--text-sub)" }}>.json</code> com todos os dados</div>
-              <div>• Salve no celular ou envie por WhatsApp pra você mesmo</div>
-              <div>• Compatível com backups do V2 (versão anterior)</div>
+              <div>• Backup V5 salva turnos, gastos, cartão, veículos, impostos e Gensen</div>
+              <div>• Compatível com backups antigos: V2/V3/V4 continuam abrindo</div>
+              <div>• Salve no celular ou mande no WhatsApp pra você mesmo</div>
             </div>
 
             <button onClick={doExport} className="w-full py-2.5 rounded-xl font-bold text-sm" style={{ background: "var(--text)", color: "var(--bg)" }}>
-              ⬇ Baixar Backup Agora
+              ⬇ Baixar Backup Completo
             </button>
 
             {backupJson && (
               <div className="space-y-2">
-                <div className="text-xs" style={{ color: "var(--positive)" }}>✓ Backup gerado! Se o download não abriu, copie abaixo:</div>
+                <div className="text-xs" style={{ color: "var(--positive)" }}>✓ Backup V5 gerado! Se o download não abriu, copie abaixo:</div>
                 <div className="relative">
                   <textarea
                     readOnly value={backupJson} rows={4}
@@ -127,8 +136,20 @@ export function BackupModal({ entries, settings, gastos, carro, auditHistory, on
               <div className="rounded-xl p-3 space-y-1.5" style={{ background: "var(--bg-elevated)" }}>
                 <div className="text-xs font-semibold" style={{ color: "var(--positive)" }}>✓ Arquivo válido</div>
                 <div className="flex justify-between text-sm">
-                  <span style={{ color: "var(--text-sub)" }}>Lançamentos</span>
+                  <span style={{ color: "var(--text-sub)" }}>Versão</span>
+                  <span className="font-mono font-bold" style={{ color: "var(--text)" }}>V{preview.version || "?"}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span style={{ color: "var(--text-sub)" }}>Turnos</span>
                   <span className="font-mono font-bold" style={{ color: "var(--text)" }}>{preview.entries.length}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span style={{ color: "var(--text-sub)" }}>Cartão</span>
+                  <span className="font-mono font-bold" style={{ color: "var(--cc)" }}>{preview.cartao?.lancamentos?.length || 0}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span style={{ color: "var(--text-sub)" }}>Veículos / impostos</span>
+                  <span className="font-mono font-bold" style={{ color: "var(--warning)" }}>{preview.taxVehicles?.length || 0} / {preview.taxPayments?.length || 0}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span style={{ color: "var(--text-sub)" }}>Data do backup</span>
@@ -156,7 +177,7 @@ export function BackupModal({ entries, settings, gastos, carro, auditHistory, on
               >⬆ Restaurar este Backup</button>
             ) : (
               <div className="rounded-xl p-3" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)" }}>
-                <p className="text-sm text-center mb-2" style={{ color: "var(--negative)" }}>Isso substitui todos os dados atuais ({entries.length} lançamentos). Tem certeza?</p>
+                <p className="text-sm text-center mb-2" style={{ color: "var(--negative)" }}>Isso substitui todos os dados atuais ({entries.length} turnos). Tem certeza?</p>
                 <div className="flex gap-2">
                   <button onClick={() => setConfirm(false)} className="flex-1 py-2 rounded-lg text-xs" style={{ border: "1px solid var(--border-mid)", color: "var(--text-sub)" }}>Cancelar</button>
                   <button onClick={doRestore} className="flex-1 py-2 rounded-lg font-bold text-xs" style={{ background: "var(--negative)", color: "#fff" }}>Sim, restaurar</button>
