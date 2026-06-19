@@ -15,6 +15,7 @@ import { Gastos } from "./screens/Gastos.jsx";
 import { SuperFinance } from "./screens/SuperFinance.jsx";
 import { Settings } from "./screens/Settings.jsx";
 import { Cartao } from "./screens/Cartao.jsx";
+import { Impostos } from "./screens/Impostos.jsx";
 import { normalizeExtras } from "./utils/backup.js";
 
 const TABS = [
@@ -24,6 +25,7 @@ const TABS = [
   { id: "reports",   label: "Relat.",   icon: "📊" },
   { id: "cartao",    label: "Cartão",   icon: "💳" },
   { id: "gastos",    label: "Gastos",   icon: "💰" },
+  { id: "impostos",  label: "Taxas",    icon: "🏛️" },
   { id: "config",    label: "Config",   icon: "⚙️" },
 ];
 
@@ -107,6 +109,7 @@ export default function App() {
         {tab === "cartao" && <Cartao extras={extras} setExtras={setExtras} />}
         {tab === "gastos" && <Gastos gastos={gastos} setGastos={setGastos} carro={carro} setCarro={setCarro} />}
         {tab === "reports" && <Reports entries={entries} settings={settings} />}
+        {tab === "impostos" && <Impostos extras={extras} setExtras={setExtras} />}
         {tab === "config" && <Settings settings={settings} setSettings={setSettings} entries={entries} auditHistory={auditHistory} setAuditHistory={setAuditHistory} />}
       </main>
 
