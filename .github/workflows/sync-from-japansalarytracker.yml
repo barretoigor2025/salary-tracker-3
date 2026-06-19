@@ -2,50 +2,9 @@ name: Restore SalaryTracker App
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/sync-from-japansalarytracker.yml
-
-permissions:
-  contents: write
 
 jobs:
-  restore:
+  noop:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout target repo
-        uses: actions/checkout@v4
-        with:
-          path: target
-
-      - name: Checkout original SalaryTracker
-        uses: actions/checkout@v4
-        with:
-          repository: barretoigor2025/japansalarytracker-
-          path: source
-
-      - name: Replace app with original SalaryTracker
-        run: |
-          set -e
-          cd target
-          mkdir -p /tmp/keep_workflows
-          cp -R .github/workflows /tmp/keep_workflows/workflows
-          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-          cp -R ../source/. .
-          mkdir -p .github
-          cp -R /tmp/keep_workflows/workflows .github/workflows
-          rm -rf .git
-
-      - name: Commit restored app
-        run: |
-          cd target
-          git config user.name github-actions[bot]
-          git config user.email github-actions[bot]@users.noreply.github.com
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No changes needed"
-          else
-            git commit -m "Restore original SalaryTracker app"
-            git push
-          fi
+      - run: echo disabled
