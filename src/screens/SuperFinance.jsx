@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Badge, Card, MonthPicker, SectionLabel, StatRow } from "../components/ui.jsx";
 import { YEN, fmtDate, currentMonth } from "../utils/fmt.js";
-import { allMonthsFromData, annualTaxSnapshot, buildMonthlyFinance, monthLabel } from "../utils/finance.js";
+import { allMonthsFromData, annualTaxSnapshot, monthLabel, sumSalaryMonth, sumBudgetMonth, cardMonth, vehicleTaxStatus } from "../utils/finance.js";
 
 const CAT_LABELS = {
   mercado_jp:  "Mercado JP",
@@ -35,6 +35,12 @@ function normalizeCats(cats) {
 function pct(part, total) {
   if (!total) return 0;
   return Math.round((part / total) * 100);
+}
+
+function prevMonthOf(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function MiniCard({ label, value, note, color = "var(--text)" }) {
@@ -72,18 +78,36 @@ export function SuperFinance({ entries, settings, gastos, extras }) {
   const months = useMemo(() => allMonthsFromData(entries, gastos, extras), [entries, gastos, extras]);
   const initialMonth = months.includes(currentMonth()) ? currentMonth() : (months[months.length - 1] || currentMonth());
   const [month, setMonth] = useState(initialMonth);
-  const data = useMemo(() => buildMonthlyFinance(entries, settings, gastos, extras, month), [entries, settings, gastos, extras, month]);
+
+  // month = expense month (cartão + contas pagos com o salário do mês anterior)
+  // salaryMonth = month-1 (trabalhado em month-1, recebido no dia 20 de month)
+  const salaryMonth = useMemo(() => prevMonthOf(month), [month]);
+
+  const salary = useMemo(() => sumSalaryMonth(entries, settings, salaryMonth), [entries, settings, salaryMonth]);
+  const budget = useMemo(() => sumBudgetMonth(gastos, month), [gastos, month]);
+  const card = useMemo(() => cardMonth(extras?.cartao?.lancamentos || [], month), [extras, month]);
+  const vehicleTax = useMemo(() => vehicleTaxStatus(extras, month), [extras, month]);
+
+  const incomeReal = budget.income || salary.estimatedNet;
+  const totalOut = budget.fixedExpenses + card.total;
+  const saldo = incomeReal - totalOut;
+  const cashNeeded = budget.hagaki + vehicleTax.monthRows.filter(r => !r.paid).reduce((s, r) => s + r.amount, 0);
+
+  // Previous cycle: expense month = salaryMonth (month-1), salary = month-2
+  const prevExpenseMonth = salaryMonth;
+  const prevSalaryMonth = useMemo(() => prevMonthOf(prevExpenseMonth), [prevExpenseMonth]);
+
+  const prevSalary = useMemo(() => sumSalaryMonth(entries, settings, prevSalaryMonth), [entries, settings, prevSalaryMonth]);
+  const prevBudget = useMemo(() => sumBudgetMonth(gastos, prevExpenseMonth), [gastos, prevExpenseMonth]);
+  const prevCard = useMemo(() => cardMonth(extras?.cartao?.lancamentos || [], prevExpenseMonth), [extras, prevExpenseMonth]);
+
+  const prevIncomeReal = prevBudget.income || prevSalary.estimatedNet;
+  const prevTotalOut = prevBudget.fixedExpenses + prevCard.total;
+
   const annual = annualTaxSnapshot(extras);
 
-  const prevMonth = useMemo(() => {
-    const [y, m] = month.split("-").map(Number);
-    const d = new Date(y, m - 2, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  }, [month]);
-  const prevData = useMemo(() => buildMonthlyFinance(entries, settings, gastos, extras, prevMonth), [entries, settings, gastos, extras, prevMonth]);
-
-  const curCatMap = useMemo(() => normalizeCats(data.card.categories), [data.card.categories]);
-  const prevCatMap = useMemo(() => normalizeCats(prevData.card.categories), [prevData.card.categories]);
+  const curCatMap = useMemo(() => normalizeCats(card.categories), [card.categories]);
+  const prevCatMap = useMemo(() => normalizeCats(prevCard.categories), [prevCard.categories]);
   const catDeltas = useMemo(() => {
     const keys = [...new Set([...Object.keys(curCatMap), ...Object.keys(prevCatMap)])];
     return keys
@@ -93,29 +117,29 @@ export function SuperFinance({ entries, settings, gastos, extras }) {
   }, [curCatMap, prevCatMap]);
 
   const itemDeltas = useMemo(() => {
-    const allItems = [...data.budget.debitItems, ...data.budget.hagakiItems, ...prevData.budget.debitItems, ...prevData.budget.hagakiItems];
+    const allItems = [...budget.debitItems, ...budget.hagakiItems, ...prevBudget.debitItems, ...prevBudget.hagakiItems];
     const seen = new Set();
     const ids = [];
     allItems.forEach(i => { if (!seen.has(i.id)) { seen.add(i.id); ids.push(i); } });
     return ids.map(item => {
-      const cur = [...data.budget.debitItems, ...data.budget.hagakiItems].find(x => x.id === item.id)?.amount || 0;
-      const prev = [...prevData.budget.debitItems, ...prevData.budget.hagakiItems].find(x => x.id === item.id)?.amount || 0;
+      const cur = [...budget.debitItems, ...budget.hagakiItems].find(x => x.id === item.id)?.amount || 0;
+      const prev = [...prevBudget.debitItems, ...prevBudget.hagakiItems].find(x => x.id === item.id)?.amount || 0;
       return { name: item.name, cur, prev, delta: cur - prev };
     }).filter(i => i.delta !== 0 && (i.cur > 0 || i.prev > 0)).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-  }, [data.budget, prevData.budget]);
+  }, [budget, prevBudget]);
 
-  const hasPrevData = prevData.incomeReal > 0 || prevData.card.total > 0 || prevData.totalOut > 0;
+  const hasPrevData = prevIncomeReal > 0 || prevCard.total > 0 || prevTotalOut > 0;
   const cardLimit = extras?.cartao?.setup?.limit || 0;
-  const cardUsePct = pct(data.card.total, cardLimit);
-  const expensePct = pct(data.totalOut, data.incomeReal);
-  const salaryAccuracy = (gastos?.overrides?.[month]?.r1 || 0) > 0 ? "renda real do holerite" : "estimativa pelo app";
+  const cardUsePct = pct(card.total, cardLimit);
+  const expensePct = pct(totalOut, incomeReal);
+  const salaryAccuracy = budget.income > 0 ? "renda lançada nos gastos" : `estimativa de ${monthLabel(salaryMonth)}`;
 
   const insight = (() => {
-    if (data.incomeReal <= 0) return "Sem renda lançada neste mês ainda. Use o holerite real em Gastos quando cair.";
-    if (data.saldo < 0) return `Mês negativo em ${YEN(Math.abs(data.saldo))}. O vilão está entre cartão, hagaki e gastos fixos.`;
+    if (incomeReal <= 0) return "Sem renda lançada neste mês ainda. Use o holerite real em Gastos quando cair.";
+    if (saldo < 0) return `Mês negativo em ${YEN(Math.abs(saldo))}. O vilão está entre cartão, hagaki e gastos fixos.`;
     if (expensePct > 85) return `Sobrou pouco: despesas comem ${expensePct}% da renda. Mês apertado, sem muita margem pra surpresa.`;
-    if (data.card.total > data.budget.fixedExpenses) return "O cartão passou os gastos fixos. Vale olhar as categorias antes da fatura fechar.";
-    return `Mês saudável até aqui. Sobra estimada: ${YEN(data.saldo)}.`;
+    if (card.total > budget.fixedExpenses) return "O cartão passou os gastos fixos. Vale olhar as categorias antes da fatura fechar.";
+    return `Mês saudável até aqui. Sobra estimada: ${YEN(saldo)}.`;
   })();
 
   return (
@@ -127,21 +151,31 @@ export function SuperFinance({ entries, settings, gastos, extras }) {
 
       <MonthPicker value={month} onChange={setMonth} />
 
-      <Card style={{ background: data.saldo >= 0 ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)", borderColor: data.saldo >= 0 ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)" }}>
+      {/* Payment cycle label */}
+      <div className="rounded-lg px-3 py-2 text-xs flex items-center gap-2" style={{ background: "var(--bg-elevated)", color: "var(--text-muted)" }}>
+        <span>💡</span>
+        <span>
+          Despesas de <strong style={{ color: "var(--text-sub)" }}>{monthLabel(month)}</strong>
+          {" · "}salário de <strong style={{ color: "var(--text-sub)" }}>{monthLabel(salaryMonth)}</strong>
+          {" "}(recebido no dia 20)
+        </span>
+      </div>
+
+      <Card style={{ background: saldo >= 0 ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)", borderColor: saldo >= 0 ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)" }}>
         <div className="flex items-start gap-2">
           <span className="text-xl">🧠</span>
           <div>
-            <div className="text-sm font-semibold mb-1" style={{ color: data.saldo >= 0 ? "var(--positive)" : "var(--negative)" }}>Leitura do mês</div>
+            <div className="text-sm font-semibold mb-1" style={{ color: saldo >= 0 ? "var(--positive)" : "var(--negative)" }}>Leitura do mês</div>
             <p className="text-sm leading-relaxed" style={{ color: "var(--text-sub)" }}>{insight}</p>
           </div>
         </div>
       </Card>
 
       <div className="grid grid-cols-2 gap-2">
-        <MiniCard label="Renda usada" value={YEN(data.incomeReal)} note={salaryAccuracy} color="var(--positive)" />
-        <MiniCard label="Saída total" value={YEN(data.totalOut)} note={`${expensePct}% da renda`} color="var(--negative)" />
-        <MiniCard label="Saldo final" value={data.saldo >= 0 ? YEN(data.saldo) : `-${YEN(Math.abs(data.saldo))}`} note={monthLabel(month)} color={data.saldo >= 0 ? "var(--positive)" : "var(--negative)"} />
-        <MiniCard label="Sacar em mãos" value={YEN(data.cashNeeded)} note="hagaki + impostos abertos" color="var(--warning)" />
+        <MiniCard label="Renda usada" value={YEN(incomeReal)} note={salaryAccuracy} color="var(--positive)" />
+        <MiniCard label="Saída total" value={YEN(totalOut)} note={`${expensePct}% da renda`} color="var(--negative)" />
+        <MiniCard label="Saldo final" value={saldo >= 0 ? YEN(saldo) : `-${YEN(Math.abs(saldo))}`} note={monthLabel(month)} color={saldo >= 0 ? "var(--positive)" : "var(--negative)"} />
+        <MiniCard label="Sacar em mãos" value={YEN(cashNeeded)} note="hagaki + impostos abertos" color="var(--warning)" />
       </div>
 
       <Card>
@@ -153,35 +187,35 @@ export function SuperFinance({ entries, settings, gastos, extras }) {
         <div className="grid grid-cols-3 gap-2 mt-3 text-center">
           <div>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>Débito</div>
-            <div className="text-sm font-mono font-bold" style={{ color: "var(--negative)" }}>{YEN(data.budget.debit)}</div>
+            <div className="text-sm font-mono font-bold" style={{ color: "var(--negative)" }}>{YEN(budget.debit)}</div>
           </div>
           <div>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>Hagaki</div>
-            <div className="text-sm font-mono font-bold" style={{ color: "var(--warning)" }}>{YEN(data.budget.hagaki)}</div>
+            <div className="text-sm font-mono font-bold" style={{ color: "var(--warning)" }}>{YEN(budget.hagaki)}</div>
           </div>
           <div>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>Cartão</div>
-            <div className="text-sm font-mono font-bold" style={{ color: "var(--cc)" }}>{YEN(data.card.total)}</div>
+            <div className="text-sm font-mono font-bold" style={{ color: "var(--cc)" }}>{YEN(card.total)}</div>
           </div>
         </div>
       </Card>
 
       <Card>
-        <SectionLabel>🚚 Salário calculado</SectionLabel>
+        <SectionLabel>🚚 Salário calculado — {monthLabel(salaryMonth)}</SectionLabel>
         <div className="grid grid-cols-2 gap-2 mb-2">
           <div className="rounded-lg p-2" style={{ background: "var(--bg-elevated)" }}>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>Bruto estimado</div>
-            <div className="text-sm font-mono font-bold" style={{ color: "var(--positive)" }}>{YEN(data.salary.grossWithTeate)}</div>
+            <div className="text-sm font-mono font-bold" style={{ color: "var(--positive)" }}>{YEN(salary.grossWithTeate)}</div>
           </div>
           <div className="rounded-lg p-2" style={{ background: "var(--bg-elevated)" }}>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>Líquido estimado</div>
-            <div className="text-sm font-mono font-bold" style={{ color: "var(--warning)" }}>{YEN(data.salary.estimatedNet)}</div>
+            <div className="text-sm font-mono font-bold" style={{ color: "var(--warning)" }}>{YEN(salary.estimatedNet)}</div>
           </div>
         </div>
-        <StatRow label="Dias trabalhados" value={`${data.salary.workedDays} dias`} />
-        <StatRow label="Horas totais" value={`${data.salary.totalHours.toFixed(1)}h`} />
-        <StatRow label="Hora extra" value={`${data.salary.overtimeHours.toFixed(1)}h`} valueColor={data.salary.overtimeHours > 60 ? "var(--negative)" : "var(--warning)"} />
-        <StatRow label="Adicional noturno" value={`${data.salary.nightHours.toFixed(1)}h`} valueColor="var(--night)" />
+        <StatRow label="Dias trabalhados" value={`${salary.workedDays} dias`} />
+        <StatRow label="Horas totais" value={`${salary.totalHours.toFixed(1)}h`} />
+        <StatRow label="Hora extra" value={`${salary.overtimeHours.toFixed(1)}h`} valueColor={salary.overtimeHours > 60 ? "var(--negative)" : "var(--warning)"} />
+        <StatRow label="Adicional noturno" value={`${salary.nightHours.toFixed(1)}h`} valueColor="var(--night)" />
       </Card>
 
       <Card>
@@ -192,30 +226,30 @@ export function SuperFinance({ entries, settings, gastos, extras }) {
         <div className="flex justify-between items-end mb-2">
           <div>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>Lançamentos do mês</div>
-            <div className="text-xl font-mono font-bold" style={{ color: "var(--cc)" }}>{YEN(data.card.total)}</div>
+            <div className="text-xl font-mono font-bold" style={{ color: "var(--cc)" }}>{YEN(card.total)}</div>
           </div>
           {cardLimit > 0 && <div className="text-xs text-right" style={{ color: "var(--text-muted)" }}>{cardUsePct}% do limite<br />{YEN(cardLimit)}</div>}
         </div>
         {cardLimit > 0 && <Progress value={cardUsePct} tone={cardUsePct > 70 ? "bad" : cardUsePct > 45 ? "warn" : "good"} />}
         <div className="mt-3 space-y-1">
-          {data.card.categories.slice(0, 6).map(c => <Row key={c.cat} label={CAT_LABELS[c.cat] || c.cat} value={YEN(c.amount)} note={`${pct(c.amount, data.card.total)}% do cartão`} color="var(--cc)" />)}
-          {data.card.categories.length === 0 && <p className="text-xs py-2 text-center" style={{ color: "var(--text-muted)" }}>Nenhum lançamento de cartão neste mês.</p>}
+          {card.categories.slice(0, 6).map(c => <Row key={c.cat} label={CAT_LABELS[c.cat] || c.cat} value={YEN(c.amount)} note={`${pct(c.amount, card.total)}% do cartão`} color="var(--cc)" />)}
+          {card.categories.length === 0 && <p className="text-xs py-2 text-center" style={{ color: "var(--text-muted)" }}>Nenhum lançamento de cartão neste mês.</p>}
         </div>
       </Card>
 
       <Card>
         <SectionLabel>📮 Contas e boletos do mês</SectionLabel>
-        {data.budget.debitItems.slice(0, 5).map(i => <Row key={`d-${i.id}`} label={i.name} value={YEN(i.amount)} note="débito automático" negative />)}
-        {data.budget.hagakiItems.slice(0, 8).map(i => <Row key={`h-${i.id}`} label={i.name} value={YEN(i.amount)} note="hagaki / boleto" color="var(--warning)" />)}
-        {data.budget.fixedExpenses === 0 && <p className="text-xs py-2 text-center" style={{ color: "var(--text-muted)" }}>Sem contas fixas lançadas.</p>}
+        {budget.debitItems.slice(0, 5).map(i => <Row key={`d-${i.id}`} label={i.name} value={YEN(i.amount)} note="débito automático" negative />)}
+        {budget.hagakiItems.slice(0, 8).map(i => <Row key={`h-${i.id}`} label={i.name} value={YEN(i.amount)} note="hagaki / boleto" color="var(--warning)" />)}
+        {budget.fixedExpenses === 0 && <p className="text-xs py-2 text-center" style={{ color: "var(--text-muted)" }}>Sem contas fixas lançadas.</p>}
       </Card>
 
       <Card>
         <div className="flex items-center justify-between mb-2">
           <SectionLabel>🚗 Impostos dos carros</SectionLabel>
-          <Badge color={data.vehicleTax.openTotal > 0 ? "yellow" : "green"}>{YEN(data.vehicleTax.openTotal)} aberto</Badge>
+          <Badge color={vehicleTax.openTotal > 0 ? "yellow" : "green"}>{YEN(vehicleTax.openTotal)} aberto</Badge>
         </div>
-        {data.vehicleTax.monthRows.length > 0 ? data.vehicleTax.monthRows.map(r => (
+        {vehicleTax.monthRows.length > 0 ? vehicleTax.monthRows.map(r => (
           <Row
             key={`${r.vehicle}-${r.year}-${r.parcel}`}
             label={`${r.vehicle} · parcela ${r.parcel}`}
@@ -224,9 +258,9 @@ export function SuperFinance({ entries, settings, gastos, extras }) {
             color={r.paid ? "var(--positive)" : "var(--warning)"}
           />
         )) : <p className="text-xs py-2 text-center" style={{ color: "var(--text-muted)" }}>Nenhum imposto de veículo neste mês.</p>}
-        {data.vehicleTax.nextOpen && (
+        {vehicleTax.nextOpen && (
           <div className="mt-2 rounded-lg p-2 text-xs" style={{ background: "rgba(245,158,11,0.08)", color: "var(--warning)", border: "1px solid rgba(245,158,11,0.25)" }}>
-            Próximo aberto: {data.vehicleTax.nextOpen.vehicle} · {YEN(data.vehicleTax.nextOpen.amount)} · {fmtDate(data.vehicleTax.nextOpen.dueDate)}
+            Próximo aberto: {vehicleTax.nextOpen.vehicle} · {YEN(vehicleTax.nextOpen.amount)} · {fmtDate(vehicleTax.nextOpen.dueDate)}
           </div>
         )}
       </Card>
@@ -234,18 +268,17 @@ export function SuperFinance({ entries, settings, gastos, extras }) {
       {hasPrevData && (
         <Card>
           <div className="flex items-center justify-between mb-2">
-            <SectionLabel>📈 vs {monthLabel(prevMonth)}</SectionLabel>
-            <Badge color={(data.totalOut - prevData.totalOut) <= 0 ? "green" : "red"}>
-              {data.totalOut - prevData.totalOut > 0 ? "+" : ""}{YEN(data.totalOut - prevData.totalOut)} saídas
+            <SectionLabel>📈 vs {monthLabel(prevExpenseMonth)}</SectionLabel>
+            <Badge color={(totalOut - prevTotalOut) <= 0 ? "green" : "red"}>
+              {totalOut - prevTotalOut > 0 ? "+" : ""}{YEN(totalOut - prevTotalOut)} saídas
             </Badge>
           </div>
 
-          {/* Totals row */}
           <div className="grid grid-cols-3 gap-1.5 mb-3">
             {[
-              { label: "Renda", cur: data.incomeReal, prev: prevData.incomeReal, positive: true },
-              { label: "Cartão", cur: data.card.total, prev: prevData.card.total, positive: false },
-              { label: "Contas", cur: data.budget.fixedExpenses, prev: prevData.budget.fixedExpenses, positive: false },
+              { label: "Renda", cur: incomeReal, prev: prevIncomeReal, positive: true },
+              { label: "Cartão", cur: card.total, prev: prevCard.total, positive: false },
+              { label: "Contas", cur: budget.fixedExpenses, prev: prevBudget.fixedExpenses, positive: false },
             ].map(({ label, cur, prev, positive }) => {
               const delta = cur - prev;
               const good = positive ? delta >= 0 : delta <= 0;
@@ -263,11 +296,10 @@ export function SuperFinance({ entries, settings, gastos, extras }) {
             })}
           </div>
 
-          {/* Card categories delta */}
           {catDeltas.length > 0 && (
             <>
               <div className="text-xs font-medium mb-1" style={{ color: "var(--text-sub)" }}>Cartão por categoria</div>
-              {catDeltas.slice(0, 5).map(({ cat, cur, prev, delta }) => (
+              {catDeltas.slice(0, 5).map(({ cat, cur, delta }) => (
                 <div key={cat} className="flex items-center justify-between py-1 border-b last:border-0" style={{ borderColor: "var(--border)" }}>
                   <span className="text-xs" style={{ color: "var(--text-sub)" }}>{CAT_LABELS[cat] || cat}</span>
                   <div className="flex items-center gap-2">
@@ -283,7 +315,6 @@ export function SuperFinance({ entries, settings, gastos, extras }) {
             </>
           )}
 
-          {/* Fixed expense item deltas */}
           {itemDeltas.length > 0 && (
             <div className="mt-2">
               <div className="text-xs font-medium mb-1" style={{ color: "var(--text-sub)" }}>Contas que mudaram</div>
