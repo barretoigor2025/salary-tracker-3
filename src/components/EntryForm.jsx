@@ -48,7 +48,7 @@ export function EntryForm({ initial, settings, onSave, onClose, entries = [] }) 
             </select>
             <button
               onClick={() => setForm(f => ({ ...f, dayType: "normal", start: "05:45", end: "17:00", breakMinutes: 60 }))}
-              className="px-2.5 py-2 rounded-lg text-xs font-bold border-2 transition-all"
+              className="px-2.5 py-2 rounded-lg text-xs font-bold border-2 transition-all whitespace-nowrap"
               style={{
                 borderColor: "var(--warning)",
                 background: form.start === "05:45" && form.end === "17:00" ? "var(--warning)" : "transparent",
@@ -57,7 +57,7 @@ export function EntryForm({ initial, settings, onSave, onClose, entries = [] }) 
             >☀️ 昼勤</button>
             <button
               onClick={() => setForm(f => ({ ...f, dayType: "normal", start: "17:00", end: "03:45", breakMinutes: 60 }))}
-              className="px-2.5 py-2 rounded-lg text-xs font-bold border-2 transition-all"
+              className="px-2.5 py-2 rounded-lg text-xs font-bold border-2 transition-all whitespace-nowrap"
               style={{
                 borderColor: "var(--night)",
                 background: form.start === "17:00" && form.end === "03:45" ? "var(--night)" : "transparent",
