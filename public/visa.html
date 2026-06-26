@@ -551,7 +551,19 @@
      QUESTIONÁRIO
      Cada pergunta tem: id, seção, texto, tipo (choice|number), opções e
      uma função showIf opcional (perguntas condicionais à categoria).
+
+     Helpers de visibilidade reutilizados nas perguntas abaixo:
+       • notMinorChild → oculta perguntas financeiras/conduta/obrigações para
+         menores de 18 anos nas categorias filho (実子). Essas perguntas não
+         fazem sentido para crianças dependentes.
+       • needsStatusYears → apenas categorias que exigem anos no status de
+         trabalho: work, other, long_term.
      ------------------------------------------------------------------- */
+  const notMinorChild = (a) =>
+    !(["child_jp", "child_pr"].includes(a.category) && a.isMinor === "yes");
+  const needsStatusYears = (a) =>
+    ["work", "other", "long_term"].includes(a.category);
+
   const QUESTIONS = [
     {
       id: "category", section: "Categoria",
@@ -570,6 +582,17 @@
         { v: "work",       t: "Visto de trabalho", s: "就労ビザ" },
         { v: "other",      t: "Outro", s: "その他" }
       ]
+    },
+    {
+      id: "isMinor", section: "Categoria",
+      text: "Você está aplicando como menor de 18 anos (ou sob responsável legal)?",
+      hint: "Para filhos menores de japonês ou residente permanente, os requisitos de renda e conduta são formalmente dispensados — o principal requisito é o tempo de residência.",
+      type: "choice",
+      options: [
+        { v: "yes", t: "Sim, sou menor de 18 anos", s: "ou aplico como dependente menor" },
+        { v: "no",  t: "Não, sou maior de 18 anos" }
+      ],
+      showIf: (a) => ["child_jp", "child_pr"].includes(a.category)
     },
     {
       id: "yearsInJapan", section: "Residência",
@@ -599,14 +622,15 @@
     {
       id: "yearsStatus", section: "Residência",
       text: "Há quanto tempo possui o status de residência atual?",
-      hint: "Para visto de trabalho, são exigidos 5+ anos com status de trabalho/residência.",
+      hint: "Para visto de trabalho e 定住者, são exigidos 5+ anos com status de trabalho/residência.",
       type: "choice",
       options: [
         { v: "lt1",   t: "Menos de 1 ano" },
         { v: "1to4",  t: "1 a 4 anos" },
         { v: "5to9",  t: "5 a 9 anos" },
         { v: "gte10", t: "10 anos ou mais" }
-      ]
+      ],
+      showIf: needsStatusYears
     },
     {
       id: "excludedStatus", section: "Residência",
@@ -629,7 +653,8 @@
         { v: "3", t: "3 anos" },
         { v: "5", t: "5 anos" },
         { v: "other", t: "Outro / não sei" }
-      ]
+      ],
+      showIf: notMinorChild
     },
     {
       id: "marriageYears", section: "Família",
@@ -662,7 +687,8 @@
         { v: "3to4", t: "¥3.000.000 – ¥4.000.000" },
         { v: "4to6", t: "¥4.000.000 – ¥6.000.000" },
         { v: "gt6",  t: "Mais de ¥6.000.000" }
-      ]
+      ],
+      showIf: notMinorChild
     },
     {
       id: "dependents", section: "Finanças",
@@ -674,7 +700,8 @@
         { v: "1",     t: "1 pessoa" },
         { v: "2",     t: "2 pessoas" },
         { v: "3plus", t: "3 ou mais" }
-      ]
+      ],
+      showIf: notMinorChild
     },
     {
       id: "stableJob", section: "Finanças",
@@ -685,7 +712,8 @@
         { v: "yes",   t: "Sim, estável e contínua" },
         { v: "partly", t: "Parcialmente / temporária" },
         { v: "no",    t: "Não tenho renda estável" }
-      ]
+      ],
+      showIf: notMinorChild
     },
     {
       id: "privateDebt", section: "Finanças",
@@ -696,7 +724,8 @@
         { v: "no",    t: "Não tenho dívidas significativas" },
         { v: "small", t: "Apenas dívidas pequenas", s: "parcelamentos normais" },
         { v: "yes",   t: "Sim, tenho dívidas relevantes não pagas" }
-      ]
+      ],
+      showIf: notMinorChild
     },
     {
       id: "insurance", section: "Obrigações públicas",
@@ -708,7 +737,8 @@
         { v: "kokumin", t: "Sim — Kokumin Hoken + Nenkin" },
         { v: "partial", t: "Apenas seguro saúde, sem pensão" },
         { v: "no", t: "Não estou inscrito" }
-      ]
+      ],
+      showIf: notMinorChild
     },
     {
       id: "paymentsOnTime", section: "Obrigações públicas",
@@ -720,7 +750,8 @@
         { v: "minor_late", t: "Houve pequenos atrasos, já quitados" },
         { v: "recent_late", t: "Tive atrasos recentes (últimos 1–2 anos)" },
         { v: "unpaid", t: "Tenho valores em aberto" }
-      ]
+      ],
+      showIf: notMinorChild
     },
     {
       id: "pensionRecord", section: "Obrigações públicas",
@@ -731,7 +762,8 @@
         { v: "yes", t: "Sim, em dia" },
         { v: "late", t: "Com alguns atrasos" },
         { v: "no", t: "Não / não sei" }
-      ]
+      ],
+      showIf: notMinorChild
     },
     {
       id: "criminal", section: "Conduta",
@@ -742,7 +774,8 @@
         { v: "none", t: "Não, ficha limpa" },
         { v: "minor", t: "Apenas infrações leves (ex.: trânsito)" },
         { v: "serious", t: "Sim, pena ou multa grave" }
-      ]
+      ],
+      showIf: notMinorChild
     },
     {
       id: "guarantor", section: "Documentação",
@@ -752,7 +785,8 @@
       options: [
         { v: "yes", t: "Sim, tenho garantidor" },
         { v: "no", t: "Ainda não tenho" }
-      ]
+      ],
+      showIf: notMinorChild
     },
     {
       id: "japanese", section: "Complementar",
@@ -1202,6 +1236,9 @@
         else if (bucket === "bad") problems.push(msg);
       };
 
+      // menor de 18 anos em categoria filho → dispensado de finanças/conduta/obrigações
+      const isMinor = ["child_jp", "child_pr"].includes(a.category) && a.isMinor === "yes";
+
       // ---- 1) TEMPO DE RESIDÊNCIA (peso alto: 25) ----
       const needRes = cat.residenceYears;
       const haveRes = numVal('yearsInJapan', a.yearsInJapan);
@@ -1264,6 +1301,13 @@
             `Tempo no status de trabalho abaixo de ${cat.workYears} anos (${ysLabel}).`);
         }
       }
+
+      if (isMinor) {
+        // Menor de 18 anos — finanças, obrigações e conduta são dispensados.
+        // Só o tempo de residência conta como critério principal.
+        met.push("Menor de 18 anos: os requisitos de independência financeira e boa conduta são formalmente dispensados para filhos de japonês/permanente (exemptConductFinance).");
+        met.push("O requisito essencial é ter ao menos 1 ano de residência contínua no Japão como filho(a) de japonês ou residente permanente.");
+      } else {
 
       // ---- 2) PRAZO DO VISTO ATUAL (peso importante: 12) ----
       // Regra oficial: estar no MAIOR prazo previsto para o status (別表第2).
@@ -1380,6 +1424,8 @@
       } else {
         add("Fiador/garantidor (身元保証人)", 1, 6, "warn", "Será necessário um garantidor japonês ou residente permanente.");
       }
+
+      } // end !isMinor
 
       // ---- COMPLEMENTAR: japonês (NÃO é requisito formal → não soma no máx) ----
       // Tratado apenas como observação, sem peso decisivo.
